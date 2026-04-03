@@ -34,7 +34,27 @@ A deep learning-based resume analyzer that compares a resume with a job descript
 
 ## Installation
 
-### Backend
+### Front-end
+```bash
+npm install
+npm start
+```
+
+### Back-end
 ```bash
 npm install
 node server.js
+```
+
+## Deployment
+
+### Front-end
+```bash
+https://deep-resume-analyzer.vercel.app/
+```
+
+### Back-end
+```bash
+https://deep-resume-analyzer.onrender.com/
+```
+
