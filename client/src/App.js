@@ -10,8 +10,14 @@ function App() {
   const [error, setError] = useState("");
 
   const apiBase = useMemo(() => {
-    const base = process.env.REACT_APP_API_URL || "http://localhost:5000";
-    return base.replace(/\/+$/, "");
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+
+    const deployedBase =
+      process.env.REACT_APP_API_URL || "https://deep-resume-analyzer.onrender.com";
+
+    return isLocalhost ? "http://localhost:5000" : deployedBase.replace(/\/+$/, "");
   }, []);
 
   const handleAnalyze = async () => {
@@ -34,11 +40,7 @@ function App() {
 
     try {
       setLoading(true);
-
-      const response = await axios.post(`${apiBase}/upload`, formData, {
-        headers: { "Content-Type": "multipart/form-data" }
-      });
-
+      const response = await axios.post(`${apiBase}/upload`, formData);
       setResult(response.data);
     } catch (err) {
       console.error("API ERROR:", err);
@@ -48,7 +50,7 @@ function App() {
       } else if (err.response) {
         setError(err.response.data?.message || "Server error occurred.");
       } else {
-        setError("Backend not reachable. Check your API URL and deployment.");
+        setError("Backend not reachable. Check your API URL, CORS, and deployment.");
       }
     } finally {
       setLoading(false);
@@ -209,7 +211,9 @@ function App() {
                       </span>
                     ))
                   ) : (
-                    <span className="empty-text">No technical skills detected in this job description.</span>
+                    <span className="empty-text">
+                      No technical skills detected in this job description.
+                    </span>
                   )}
                 </div>
               </div>

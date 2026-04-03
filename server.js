@@ -8,7 +8,9 @@ const { spawn } = require("child_process");
 const { randomUUID } = require("crypto");
 
 const app = express();
-app.use(cors());
+
+app.use(cors({ origin: true }));
+app.options("*", cors({ origin: true }));
 app.use(express.json({ limit: "2mb" }));
 
 const uploadDir = path.join(__dirname, "uploads");
@@ -17,10 +19,17 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
 const SKILL_RULES = [
-  { name: "Machine Learning", patterns: [/\bmachine learning\b/i] },
+  { name: "Machine Learning", patterns: [/\bmachine learning\b/i, /\bml\b/i] },
   { name: "Deep Learning", patterns: [/\bdeep learning\b/i] },
   { name: "NLP", patterns: [/\bnlp\b/i, /\bnatural language processing\b/i] },
   { name: "REST API", patterns: [/\brest api(s)?\b/i, /\brestful api(s)?\b/i] },
+
+  { name: "EDA", patterns: [/\beda\b/i, /\bexploratory data analysis\b/i] },
+  { name: "Data Preprocessing", patterns: [/\bdata preprocessing\b/i, /\bpreprocess(?:ing)?\b/i] },
+  { name: "Visualization", patterns: [/\bvisuali[sz]ation\b/i, /\bplot(?:ting)?\b/i] },
+  { name: "Matplotlib", patterns: [/\bmatplotlib\b/i] },
+  { name: "Statistics", patterns: [/\bstatistics\b/i, /\bstatistical\b/i] },
+  { name: "Probability", patterns: [/\bprobability\b/i] },
 
   { name: "C++", patterns: [/\bc\+\+\b/i] },
   { name: "C#", patterns: [/\bc#\b/i] },
@@ -85,14 +94,6 @@ function extractSkills(text) {
   return [...new Set(found)];
 }
 
-function calculateATSScore(resumeSkills) {
-  return Math.min(100, Math.round((resumeSkills.length / 15) * 100));
-}
-
-function suggestImprovements(resumeSkills) {
-  return SKILL_RULES.map((r) => r.name).filter((skill) => !resumeSkills.includes(skill));
-}
-
 function matchJob(resumeSkills, jobSkills) {
   const normalizedJobSkills = [...new Set(jobSkills)];
 
@@ -107,8 +108,15 @@ function matchJob(resumeSkills, jobSkills) {
 
   const matchedSkills = normalizedJobSkills.filter((skill) => resumeSkills.includes(skill));
   const rawCoverage = matchedSkills.length / normalizedJobSkills.length;
-  const denominator = Math.max(normalizedJobSkills.length, 2);
-  const normalizedScore = Math.round((matchedSkills.length / denominator) * 100);
+
+  const precision = resumeSkills.length
+    ? matchedSkills.length / resumeSkills.length
+    : 0;
+
+  const normalizedScore = Math.round(
+    Math.max(0, Math.min(100, rawCoverage * 100))
+  );
+
   const unionSize = new Set([...resumeSkills, ...normalizedJobSkills]).size || 1;
   const jaccardScore = Math.round((matchedSkills.length / unionSize) * 100);
 
@@ -116,16 +124,44 @@ function matchJob(resumeSkills, jobSkills) {
     matchedSkills,
     rawCoverageScore: Math.round(rawCoverage * 100),
     normalizedScore,
-    jaccardScore
+    jaccardScore,
+    precisionScore: Math.round(precision * 100)
   };
 }
 
-function predictRole(skills) {
-  if (skills.includes("Machine Learning")) return "Machine Learning Engineer";
-  if (skills.includes("React") && skills.includes("Node.js")) return "Full Stack Developer";
-  if (skills.includes("Node.js")) return "Backend Developer";
-  if (skills.includes("React")) return "Frontend Developer";
-  if (skills.includes("Java") || skills.includes("C++")) return "Software Engineer";
+function calculateATSScore(keywordCoverageScore, semanticScore, jobSkillCount, jobDescriptionWords) {
+  const richnessScore = Math.min(100, Math.round((jobSkillCount / 10) * 100));
+  const lengthScore = Math.min(100, Math.round(jobDescriptionWords / 8));
+
+  return Math.round(
+    keywordCoverageScore * 0.45 +
+    semanticScore * 0.25 +
+    richnessScore * 0.20 +
+    lengthScore * 0.10
+  );
+}
+
+function predictRoleFromSkills(skills) {
+  const has = (s) => skills.includes(s);
+
+  if (has("Pandas") || has("NumPy") || has("EDA") || has("Statistics") || has("Probability")) {
+    return "Data Analyst";
+  }
+  if (has("Machine Learning") || has("Deep Learning")) {
+    return "Machine Learning Engineer";
+  }
+  if (has("React") && has("Node.js") && has("Express")) {
+    return "Full Stack Developer";
+  }
+  if (has("Node.js") && has("Express")) {
+    return "Backend Developer";
+  }
+  if (has("React")) {
+    return "Frontend Developer";
+  }
+  if (has("Python") || has("Java") || has("C#") || has("C++") || has("SQL")) {
+    return "Software Engineer";
+  }
   return "General Software Role";
 }
 
@@ -138,6 +174,7 @@ function startPythonWorker() {
     process.env.PYTHON_CMD || (process.platform === "win32" ? "python" : "python3");
 
   const workerPath = path.join(__dirname, "ml", "worker.py");
+
   const child = spawn(pythonCmd, ["-u", workerPath], {
     cwd: __dirname,
     windowsHide: true,
@@ -189,6 +226,7 @@ function startPythonWorker() {
       item.resolve(SEMANTIC_FALLBACK);
     }
     pending.clear();
+
     setTimeout(() => {
       if (!pythonWorker) startPythonWorker();
     }, 1000);
@@ -253,28 +291,37 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     const resumeSkills = extractSkills(resumeText);
     const jobSkills = extractSkills(jobDescription);
 
-    const atsScore = calculateATSScore(resumeSkills);
-    const suggestions = suggestImprovements(resumeSkills);
     const jobMatch = matchJob(resumeSkills, jobSkills);
     const semantic = await runDeepLearningAnalysis(resumeText, jobDescription);
 
     const semanticScore = semantic.semanticScore || 0;
     const keywordMatchScore = jobMatch.normalizedScore;
+    const atsScore = calculateATSScore(
+      jobMatch.rawCoverageScore,
+      semanticScore,
+      jobSkills.length,
+      jobDescription.split(/\s+/).filter(Boolean).length
+    );
 
     const overallScore = Math.round(
-      semanticScore * 0.5 +
-      keywordMatchScore * 0.3 +
-      atsScore * 0.2
+      semanticScore * 0.45 +
+      atsScore * 0.35 +
+      keywordMatchScore * 0.20
     );
+
+    const suggestions = jobSkills.filter((skill) => !resumeSkills.includes(skill));
 
     const jobInsights = {
       detectedSkillCount: jobSkills.length,
-      isGeneric: jobSkills.length < 2,
+      isGeneric: jobSkills.length < 3,
       warning:
-        jobSkills.length < 2
-          ? "This job description appears generic or non-technical. Add more technical keywords for a better keyword match."
+        jobSkills.length < 3
+          ? "This job description appears generic or non-technical. Add more technical keywords for better scoring."
           : ""
     };
+
+    const resumeRoleFromSkills = predictRoleFromSkills(resumeSkills);
+    const jobRoleFromSkills = predictRoleFromSkills(jobSkills);
 
     res.json({
       message: "Resume processed",
@@ -287,8 +334,10 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       suggestions,
       jobMatch,
       rolePrediction: {
-        predictedFromResume: predictRole(resumeSkills),
-        predictedFromJob: predictRole(jobSkills)
+        predictedFromResume: semantic.rolePrediction?.resume?.role || resumeRoleFromSkills,
+        predictedFromJob: semantic.rolePrediction?.job?.role || jobRoleFromSkills,
+        resumeConfidence: semantic.rolePrediction?.resume?.confidence ?? 0,
+        jobConfidence: semantic.rolePrediction?.job?.confidence ?? 0
       },
       jobInsights,
       deepLearning: {
