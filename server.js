@@ -5,16 +5,14 @@ const path = require("path");
 const cors = require("cors");
 const pdfParse = require("pdf-parse");
 const { spawn } = require("child_process");
+const { randomUUID } = require("crypto");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const upload = multer({ dest: uploadDir });
 
@@ -61,6 +59,14 @@ const SKILL_RULES = [
 
   { name: "C", patterns: [/\bc\b(?!\s*[\+#])/i] }
 ];
+
+const SEMANTIC_FALLBACK = {
+  semanticScore: 0,
+  topMatchedLines: [],
+  model: "sentence-transformers/paraphrase-MiniLM-L3-v2",
+  available: false,
+  warning: "Semantic engine unavailable in this deployment. Keyword and ATS scoring still work."
+};
 
 function normalizeText(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
@@ -123,93 +129,100 @@ function predictRole(skills) {
   return "General Software Role";
 }
 
-function runDeepLearningAnalysis(resumeText, jobDescription) {
-  const fallback = {
-    semanticScore: 0,
-    topMatchedLines: [],
-    model: "sentence-transformers/all-MiniLM-L6-v2",
-    available: false,
-    warning: "Semantic engine unavailable in this deployment. Keyword and ATS scoring still work."
-  };
+let pythonWorker = null;
+let workerBuffer = "";
+const pending = new Map();
 
-  const commands = [...new Set([
-    process.env.PYTHON_CMD,
-    process.platform === "win32" ? "python" : "python3",
-    process.platform === "win32" ? "python3" : "python"
-  ].filter(Boolean))];
+function startPythonWorker() {
+  const pythonCmd =
+    process.env.PYTHON_CMD || (process.platform === "win32" ? "python" : "python3");
 
-  return new Promise((resolve) => {
-    const tryCommand = (index) => {
-      if (index >= commands.length) {
-        return resolve(fallback);
+  const workerPath = path.join(__dirname, "ml", "worker.py");
+  const child = spawn(pythonCmd, ["-u", workerPath], {
+    cwd: __dirname,
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+
+  child.stdout.setEncoding("utf8");
+
+  child.stdout.on("data", (chunk) => {
+    workerBuffer += chunk;
+
+    let idx;
+    while ((idx = workerBuffer.indexOf("\n")) >= 0) {
+      const line = workerBuffer.slice(0, idx).trim();
+      workerBuffer = workerBuffer.slice(idx + 1);
+
+      if (!line) continue;
+
+      let msg;
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        continue;
       }
 
-      const cmd = commands[index];
-      const py = spawn(cmd, ["ml/infer.py"], {
-        cwd: __dirname,
-        windowsHide: true
-      });
+      const item = pending.get(msg.id);
+      if (!item) continue;
 
-      let stdout = "";
-      let settled = false;
+      clearTimeout(item.timer);
+      pending.delete(msg.id);
 
-      const next = () => {
-        if (settled) return;
-        settled = true;
-        tryCommand(index + 1);
-      };
+      if (msg.ok) {
+        item.resolve(msg.result);
+      } else {
+        item.resolve(SEMANTIC_FALLBACK);
+      }
+    }
+  });
 
-      const timeout = setTimeout(() => {
-        try {
-          py.kill();
-        } catch {}
-        next();
-      }, 45000);
+  child.stderr.on("data", (data) => {
+    const text = data.toString().trim();
+    if (text) console.error(`[python-worker] ${text}`);
+  });
 
-      py.stdout.on("data", (data) => {
-        stdout += data.toString();
-      });
+  child.on("exit", () => {
+    pythonWorker = null;
+    for (const [, item] of pending) {
+      clearTimeout(item.timer);
+      item.resolve(SEMANTIC_FALLBACK);
+    }
+    pending.clear();
+    setTimeout(() => {
+      if (!pythonWorker) startPythonWorker();
+    }, 1000);
+  });
 
-      py.on("error", () => {
-        clearTimeout(timeout);
-        next();
-      });
+  pythonWorker = child;
+}
 
-      py.on("close", (code) => {
-        clearTimeout(timeout);
-        if (settled) return;
+function runDeepLearningAnalysis(resumeText, jobDescription, timeoutMs = 60000) {
+  return new Promise((resolve) => {
+    if (!pythonWorker) startPythonWorker();
 
-        if (code !== 0) {
-          return next();
-        }
+    const id = randomUUID();
 
-        try {
-          const parsed = JSON.parse(stdout.trim() || "{}");
-          resolve({
-            semanticScore: Number(parsed.semanticScore) || 0,
-            topMatchedLines: Array.isArray(parsed.topMatchedLines) ? parsed.topMatchedLines : [],
-            model: parsed.model || "sentence-transformers/all-MiniLM-L6-v2",
-            available: true,
-            rolePrediction: parsed.rolePrediction || undefined
-          });
-        } catch {
-          next();
-        }
-      });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      resolve(SEMANTIC_FALLBACK);
+    }, timeoutMs);
 
-      try {
-        py.stdin.write(JSON.stringify({
+    pending.set(id, { resolve, timer });
+
+    try {
+      pythonWorker.stdin.write(
+        JSON.stringify({
+          id,
           resume_text: resumeText,
           job_description: jobDescription
-        }));
-        py.stdin.end();
-      } catch {
-        clearTimeout(timeout);
-        next();
-      }
-    };
-
-    tryCommand(0);
+        }) + "\n"
+      );
+    } catch {
+      clearTimeout(timer);
+      pending.delete(id);
+      resolve(SEMANTIC_FALLBACK);
+    }
   });
 }
 
@@ -218,16 +231,14 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, pythonWorker: !!pythonWorker });
 });
 
 app.post("/upload", upload.single("resume"), async (req, res) => {
   let filePath = null;
 
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
     const jobDescription = normalizeText(req.body.jobDescription);
     if (!jobDescription) {
@@ -249,14 +260,12 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
 
     const semanticScore = semantic.semanticScore || 0;
     const keywordMatchScore = jobMatch.normalizedScore;
+
     const overallScore = Math.round(
       semanticScore * 0.5 +
       keywordMatchScore * 0.3 +
       atsScore * 0.2
     );
-
-    const rolePredictionResume = predictRole(resumeSkills);
-    const rolePredictionJob = predictRole(jobSkills);
 
     const jobInsights = {
       detectedSkillCount: jobSkills.length,
@@ -278,14 +287,14 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       suggestions,
       jobMatch,
       rolePrediction: {
-        predictedFromResume: rolePredictionResume,
-        predictedFromJob: rolePredictionJob
+        predictedFromResume: predictRole(resumeSkills),
+        predictedFromJob: predictRole(jobSkills)
       },
       jobInsights,
       deepLearning: {
         semanticScore,
         topMatchedLines: semantic.topMatchedLines || [],
-        model: semantic.model || "sentence-transformers/all-MiniLM-L6-v2",
+        model: semantic.model || "sentence-transformers/paraphrase-MiniLM-L3-v2",
         available: semantic.available !== false,
         warning: semantic.warning || ""
       },
@@ -311,4 +320,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+app.listen(PORT, () => {
+  startPythonWorker();
+  console.log(`Server started on port ${PORT}`);
+});

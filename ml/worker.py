@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import re
+import warnings
 import numpy as np
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -10,35 +11,50 @@ CACHE_DIR = os.path.join(BASE_DIR, "model_cache")
 os.environ["HF_HOME"] = CACHE_DIR
 os.environ["TRANSFORMERS_CACHE"] = CACHE_DIR
 os.environ["HUGGINGFACE_HUB_CACHE"] = CACHE_DIR
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+
+warnings.filterwarnings("ignore")
+
+from transformers.utils import logging as hf_logging
+hf_logging.set_verbosity_error()
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+# Faster model for local + deploy use
+MODEL_NAME = "sentence-transformers/paraphrase-MiniLM-L3-v2"
 model = SentenceTransformer(MODEL_NAME, cache_folder=CACHE_DIR)
 
 ROLE_PROFILES = {
     "Full Stack Developer": "Builds frontend and backend web applications using React, Node.js, JavaScript, HTML, CSS, APIs, and databases.",
-    "Backend Developer": "Builds server-side systems, APIs, authentication, databases, and backend services using Node.js, Express, SQL, MySQL, PostgreSQL, and REST APIs.",
-    "Frontend Developer": "Builds responsive user interfaces using React, JavaScript, TypeScript, HTML, CSS, and modern frontend frameworks.",
-    "Machine Learning Engineer": "Designs and deploys machine learning solutions using Python, NumPy, Pandas, scikit-learn, deep learning, NLP, and model deployment.",
-    "Data Scientist": "Analyzes data, builds predictive models, and performs statistical analysis using Python, Pandas, NumPy, SQL, and machine learning.",
-    "Software Engineer": "Builds software systems with strong programming, OOP, DSA, problem solving, Java, C++, Python, Git, and SQL."
+    "Backend Developer": "Builds server-side systems, APIs, authentication, databases, and backend services using Node.js, Express, SQL.",
+    "Frontend Developer": "Builds UI using React, JavaScript, HTML, CSS.",
+    "Machine Learning Engineer": "Python, ML, deep learning, NLP.",
+    "Data Scientist": "Python, Pandas, NumPy, ML, statistics.",
+    "Software Engineer": "Java, C++, OOP, DSA."
 }
 
-def clean_text(text: str) -> str:
+ROLE_EMB = {
+    role: model.encode([desc], normalize_embeddings=True)
+    for role, desc in ROLE_PROFILES.items()
+}
+
+def clean(text):
     return re.sub(r"\s+", " ", text or "").strip()
 
-def split_resume_lines(text: str):
+def split_resume_lines(text):
     lines = []
     for raw in text.split("\n"):
-        line = clean_text(raw)
+        line = clean(raw)
         if len(line) >= 20:
             lines.append(line)
 
     if not lines:
         chunks = re.split(r"[.!?]", text)
-        lines = [clean_text(c) for c in chunks if len(clean_text(c)) >= 20]
+        lines = [clean(c) for c in chunks if len(clean(c)) >= 20]
 
     return lines
 
@@ -48,30 +64,28 @@ def semantic_role_prediction(text):
 
     text_emb = model.encode([text], normalize_embeddings=True)
 
+    scores = []
     best_role = "General Software Role"
     best_score = 0.0
-    all_scores = []
 
-    for role, desc in ROLE_PROFILES.items():
-        role_emb = model.encode([desc], normalize_embeddings=True)
-        score = float(cosine_similarity(text_emb, role_emb)[0][0]) * 100
-        all_scores.append({"role": role, "score": round(score, 2)})
-
+    for role, emb in ROLE_EMB.items():
+        score = float(cosine_similarity(text_emb, emb)[0][0]) * 100
+        scores.append({"role": role, "score": round(score, 2)})
         if score > best_score:
             best_score = score
             best_role = role
 
-    all_scores.sort(key=lambda x: x["score"], reverse=True)
+    scores.sort(key=lambda x: x["score"], reverse=True)
 
     return {
         "role": best_role,
         "confidence": round(max(0.0, min(100.0, best_score)), 2),
-        "topRoles": all_scores[:3]
+        "topRoles": scores[:3]
     }
 
 def analyze(resume_text, job_description):
-    resume_text = clean_text(resume_text)
-    job_description = clean_text(job_description)
+    resume_text = clean(resume_text)
+    job_description = clean(job_description)
 
     if not resume_text or not job_description:
         return {
