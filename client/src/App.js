@@ -10,7 +10,8 @@ function App() {
   const [error, setError] = useState("");
 
   const apiBase = useMemo(() => {
-    return process.env.REACT_APP_API_URL || "http://localhost:5000";
+    const base = process.env.REACT_APP_API_URL || "http://localhost:5000";
+    return base.replace(/\/+$/, "");
   }, []);
 
   const handleAnalyze = async () => {
@@ -18,7 +19,7 @@ function App() {
     setResult(null);
 
     if (!file) {
-      setError("Please select a PDF resume.");
+      setError("Please upload a PDF resume.");
       return;
     }
 
@@ -33,20 +34,35 @@ function App() {
 
     try {
       setLoading(true);
+
       const response = await axios.post(`${apiBase}/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
+
       setResult(response.data);
     } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.message || "Upload failed.");
+      console.error("API ERROR:", err);
+
+      if (err.response?.status === 404) {
+        setError("Backend route /upload not found. Redeploy the backend with the latest server.js.");
+      } else if (err.response) {
+        setError(err.response.data?.message || "Server error occurred.");
+      } else {
+        setError("Backend not reachable. Check your API URL and deployment.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const progressTone = (value) => {
+    if (value >= 75) return "good";
+    if (value >= 50) return "warn";
+    return "bad";
+  };
+
   const ProgressBar = ({ label, value }) => (
-    <div className="score-block">
+    <div className={`score-block ${progressTone(value)}`}>
       <div className="score-row">
         <span>{label}</span>
         <span>{value}%</span>
@@ -57,8 +73,20 @@ function App() {
     </div>
   );
 
+  const verdict = result
+    ? result.overallScore >= 75
+      ? "Strong Match"
+      : result.overallScore >= 55
+        ? "Promising Match"
+        : "Needs Improvement"
+    : "";
+
   return (
     <div className="page">
+      <div className="bg-orb orb-one" />
+      <div className="bg-orb orb-two" />
+      <div className="bg-orb orb-three" />
+
       <div className="hero-card">
         <div className="header">
           <p className="eyebrow">Deep Learning Resume Intelligence</p>
@@ -70,8 +98,11 @@ function App() {
         </div>
 
         <div className="form-grid">
-          <div className="panel">
-            <label className="label">Job Description</label>
+          <div className="panel jd-panel">
+            <div className="panel-head">
+              <label className="label">Job Description</label>
+              <span className="panel-badge">Paste real JD text</span>
+            </div>
             <textarea
               className="textarea"
               placeholder="Paste the job description here..."
@@ -81,8 +112,12 @@ function App() {
             />
           </div>
 
-          <div className="panel">
-            <label className="label">Resume PDF</label>
+          <div className="panel upload-panel">
+            <div className="panel-head">
+              <label className="label">Resume PDF</label>
+              <span className="panel-badge">PDF only</span>
+            </div>
+
             <input
               type="file"
               accept=".pdf"
@@ -104,22 +139,24 @@ function App() {
 
         {result && (
           <div className="results">
-            <div className="role-box">
-              <div>
-                <p className="role-label">Predicted Role from Resume</p>
-                <h2>{result.rolePrediction?.predictedFromResume || "General Software Role"}</h2>
+            <div className="hero-summary">
+              <div className="verdict-card">
+                <span className="verdict-label">Verdict</span>
+                <h2>{verdict}</h2>
+                <p>{result.jobInsights?.warning || "Analysis completed successfully."}</p>
               </div>
-              <div>
-                <p className="role-label">Predicted Role from Job Description</p>
-                <h2>{result.rolePrediction?.predictedFromJob || "General Software Role"}</h2>
+
+              <div className="role-box">
+                <div>
+                  <p className="role-label">Predicted Role from Resume</p>
+                  <h2>{result.rolePrediction?.predictedFromResume || "General Software Role"}</h2>
+                </div>
+                <div>
+                  <p className="role-label">Predicted Role from Job Description</p>
+                  <h2>{result.rolePrediction?.predictedFromJob || "General Software Role"}</h2>
+                </div>
               </div>
             </div>
-
-            {result.jobInsights?.warning && (
-              <div className="warning-box">
-                {result.jobInsights.warning}
-              </div>
-            )}
 
             <div className="results-top">
               <div className="metric-card">
@@ -136,38 +173,45 @@ function App() {
                 <span className="metric-label">ATS Score</span>
                 <span className="metric-value">{result.atsScore}%</span>
               </div>
-            </div>
-
-            <ProgressBar
-              label="Keyword Match"
-              value={result.keywordMatchScore || 0}
-            />
-
-            <div className="section">
-              <h2>Skills Found</h2>
-              <div className="chip-row">
-                {(result.skills || []).map((skill) => (
-                  <span key={skill} className="chip">
-                    {skill}
-                  </span>
-                ))}
+              <div className="metric-card">
+                <span className="metric-label">Keyword Match</span>
+                <span className="metric-value">{result.keywordMatchScore || 0}%</span>
               </div>
             </div>
 
-            <div className="section">
-              <h2>Job Skills Detected</h2>
-              <div className="chip-row">
-                {(result.jobSkills || []).length ? (
-                  result.jobSkills.map((skill) => (
-                    <span key={skill} className="chip chip-jd">
+            {result.deepLearning?.available === false && (
+              <div className="warning-box">
+                {result.deepLearning?.warning || "Semantic engine unavailable in this deployment."}
+              </div>
+            )}
+
+            <ProgressBar label="Keyword Match" value={result.keywordMatchScore || 0} />
+
+            <div className="dual-grid">
+              <div className="section">
+                <h2>Skills Found</h2>
+                <div className="chip-row">
+                  {(result.skills || []).map((skill) => (
+                    <span key={skill} className="chip">
                       {skill}
                     </span>
-                  ))
-                ) : (
-                  <span className="empty-text">
-                    No technical skills detected in this job description.
-                  </span>
-                )}
+                  ))}
+                </div>
+              </div>
+
+              <div className="section">
+                <h2>Job Skills Detected</h2>
+                <div className="chip-row">
+                  {(result.jobSkills || []).length ? (
+                    result.jobSkills.map((skill) => (
+                      <span key={skill} className="chip chip-jd">
+                        {skill}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="empty-text">No technical skills detected in this job description.</span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -202,12 +246,10 @@ function App() {
               <div className="info-box">
                 <h3>Job Match</h3>
                 <p>
-                  <strong>Normalized Keyword Match:</strong>{" "}
-                  {result.keywordMatchScore || 0}%
+                  <strong>Normalized Keyword Match:</strong> {result.keywordMatchScore || 0}%
                 </p>
                 <p>
-                  <strong>Raw Coverage:</strong>{" "}
-                  {result.keywordCoverageScore || 0}%
+                  <strong>Raw Coverage:</strong> {result.keywordCoverageScore || 0}%
                 </p>
                 <p>
                   <strong>Matched Skills:</strong>{" "}

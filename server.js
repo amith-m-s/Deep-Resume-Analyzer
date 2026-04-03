@@ -7,8 +7,9 @@ const pdfParse = require("pdf-parse");
 const { spawn } = require("child_process");
 
 const app = express();
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) {
@@ -58,7 +59,7 @@ const SKILL_RULES = [
   { name: "OOP", patterns: [/\boop\b/i, /\bobject[- ]oriented programming\b/i] },
   { name: "DSA", patterns: [/\bdsa\b/i, /\bdata structures and algorithms\b/i, /\bdata structures & algorithms\b/i] },
 
-  { name: "C", patterns: [/(^|[^a-zA-Z0-9])c([^a-zA-Z0-9]|$)/i] }
+  { name: "C", patterns: [/\bc\b(?!\s*[\+#])/i] }
 ];
 
 function normalizeText(text) {
@@ -79,17 +80,11 @@ function extractSkills(text) {
 }
 
 function calculateATSScore(resumeSkills) {
-  const totalSkills = SKILL_RULES.length || 1;
-  return Math.round((resumeSkills.length / totalSkills) * 100);
+  return Math.min(100, Math.round((resumeSkills.length / 15) * 100));
 }
 
 function suggestImprovements(resumeSkills) {
-  const unique = new Set(resumeSkills);
-  return SKILL_RULES.map((r) => r.name).filter((skill) => !unique.has(skill));
-}
-
-function extractJobSkills(jobDescription) {
-  return extractSkills(jobDescription);
+  return SKILL_RULES.map((r) => r.name).filter((skill) => !resumeSkills.includes(skill));
 }
 
 function matchJob(resumeSkills, jobSkills) {
@@ -106,10 +101,8 @@ function matchJob(resumeSkills, jobSkills) {
 
   const matchedSkills = normalizedJobSkills.filter((skill) => resumeSkills.includes(skill));
   const rawCoverage = matchedSkills.length / normalizedJobSkills.length;
-
-  const richnessFactor = Math.min(1, normalizedJobSkills.length / 6);
-  const normalizedScore = Math.round(rawCoverage * richnessFactor * 100);
-
+  const denominator = Math.max(normalizedJobSkills.length, 2);
+  const normalizedScore = Math.round((matchedSkills.length / denominator) * 100);
   const unionSize = new Set([...resumeSkills, ...normalizedJobSkills]).size || 1;
   const jaccardScore = Math.round((matchedSkills.length / unionSize) * 100);
 
@@ -121,107 +114,111 @@ function matchJob(resumeSkills, jobSkills) {
   };
 }
 
-function predictRole(resumeSkills, jobSkills) {
-  const roles = [
-    {
-      role: "Full Stack Developer",
-      skills: ["React", "Node.js", "JavaScript", "HTML", "CSS", "Express", "SQL"]
-    },
-    {
-      role: "Backend Developer",
-      skills: ["Node.js", "Express", "SQL", "MySQL", "PostgreSQL", "REST API"]
-    },
-    {
-      role: "Frontend Developer",
-      skills: ["React", "JavaScript", "TypeScript", "HTML", "CSS"]
-    },
-    {
-      role: "Machine Learning Engineer",
-      skills: ["Python", "Machine Learning", "Deep Learning", "NLP", "NumPy", "Pandas"]
-    },
-    {
-      role: "Data Scientist",
-      skills: ["Python", "Pandas", "NumPy", "Machine Learning", "SQL"]
-    },
-    {
-      role: "Software Engineer",
-      skills: ["Java", "C++", "OOP", "DSA", "Git", "SQL"]
-    }
-  ];
-
-  let bestResumeRole = "General Software Role";
-  let bestResumeScore = -1;
-
-  for (const item of roles) {
-    const score = item.skills.filter((s) => resumeSkills.includes(s)).length;
-    if (score > bestResumeScore) {
-      bestResumeScore = score;
-      bestResumeRole = item.role;
-    }
-  }
-
-  let bestJobRole = "General Software Role";
-  let bestJobScore = -1;
-
-  for (const item of roles) {
-    const score = item.skills.filter((s) => jobSkills.includes(s)).length;
-    if (score > bestJobScore) {
-      bestJobScore = score;
-      bestJobRole = item.role;
-    }
-  }
-
-  return {
-    predictedFromResume: bestResumeRole,
-    predictedFromJob: bestJobScore > 0 ? bestJobRole : "General Software Role"
-  };
+function predictRole(skills) {
+  if (skills.includes("Machine Learning")) return "Machine Learning Engineer";
+  if (skills.includes("React") && skills.includes("Node.js")) return "Full Stack Developer";
+  if (skills.includes("Node.js")) return "Backend Developer";
+  if (skills.includes("React")) return "Frontend Developer";
+  if (skills.includes("Java") || skills.includes("C++")) return "Software Engineer";
+  return "General Software Role";
 }
 
 function runDeepLearningAnalysis(resumeText, jobDescription) {
-  return new Promise((resolve, reject) => {
-    const pythonCmd = process.env.PYTHON_CMD || (process.platform === "win32" ? "python" : "python3");
-    const py = spawn(pythonCmd, ["ml/infer.py"], {
-      cwd: __dirname,
-      windowsHide: true
-    });
+  const fallback = {
+    semanticScore: 0,
+    topMatchedLines: [],
+    model: "sentence-transformers/all-MiniLM-L6-v2",
+    available: false,
+    warning: "Semantic engine unavailable in this deployment. Keyword and ATS scoring still work."
+  };
 
-    let stdout = "";
-    let stderr = "";
+  const commands = [...new Set([
+    process.env.PYTHON_CMD,
+    process.platform === "win32" ? "python" : "python3",
+    process.platform === "win32" ? "python3" : "python"
+  ].filter(Boolean))];
 
-    py.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    py.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    py.on("error", (err) => reject(err));
-
-    py.on("close", (code) => {
-      if (code !== 0) {
-        return reject(new Error(stderr || `Python exited with code ${code}`));
+  return new Promise((resolve) => {
+    const tryCommand = (index) => {
+      if (index >= commands.length) {
+        return resolve(fallback);
       }
+
+      const cmd = commands[index];
+      const py = spawn(cmd, ["ml/infer.py"], {
+        cwd: __dirname,
+        windowsHide: true
+      });
+
+      let stdout = "";
+      let settled = false;
+
+      const next = () => {
+        if (settled) return;
+        settled = true;
+        tryCommand(index + 1);
+      };
+
+      const timeout = setTimeout(() => {
+        try {
+          py.kill();
+        } catch {}
+        next();
+      }, 45000);
+
+      py.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      py.on("error", () => {
+        clearTimeout(timeout);
+        next();
+      });
+
+      py.on("close", (code) => {
+        clearTimeout(timeout);
+        if (settled) return;
+
+        if (code !== 0) {
+          return next();
+        }
+
+        try {
+          const parsed = JSON.parse(stdout.trim() || "{}");
+          resolve({
+            semanticScore: Number(parsed.semanticScore) || 0,
+            topMatchedLines: Array.isArray(parsed.topMatchedLines) ? parsed.topMatchedLines : [],
+            model: parsed.model || "sentence-transformers/all-MiniLM-L6-v2",
+            available: true,
+            rolePrediction: parsed.rolePrediction || undefined
+          });
+        } catch {
+          next();
+        }
+      });
 
       try {
-        resolve(JSON.parse(stdout.trim() || "{}"));
-      } catch (err) {
-        reject(new Error(`Failed to parse Python output: ${err.message}`));
+        py.stdin.write(JSON.stringify({
+          resume_text: resumeText,
+          job_description: jobDescription
+        }));
+        py.stdin.end();
+      } catch {
+        clearTimeout(timeout);
+        next();
       }
-    });
+    };
 
-    py.stdin.write(
-      JSON.stringify({
-        resume_text: resumeText,
-        job_description: jobDescription
-      })
-    );
-    py.stdin.end();
+    tryCommand(0);
   });
 }
 
 app.get("/", (req, res) => {
   res.json({ message: "Deep Resume Analyzer backend is running" });
+});
+
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
 });
 
 app.post("/upload", upload.single("resume"), async (req, res) => {
@@ -243,23 +240,23 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     const resumeText = normalizeText(parsed.text);
 
     const resumeSkills = extractSkills(resumeText);
-    const jobSkills = extractJobSkills(jobDescription);
+    const jobSkills = extractSkills(jobDescription);
 
     const atsScore = calculateATSScore(resumeSkills);
     const suggestions = suggestImprovements(resumeSkills);
     const jobMatch = matchJob(resumeSkills, jobSkills);
-    const rolePrediction = predictRole(resumeSkills, jobSkills);
+    const semantic = await runDeepLearningAnalysis(resumeText, jobDescription);
 
-    const deepLearning = await runDeepLearningAnalysis(resumeText, jobDescription);
-
+    const semanticScore = semantic.semanticScore || 0;
     const keywordMatchScore = jobMatch.normalizedScore;
-    const semanticScore = deepLearning.semanticScore || 0;
-
     const overallScore = Math.round(
       semanticScore * 0.5 +
       keywordMatchScore * 0.3 +
       atsScore * 0.2
     );
+
+    const rolePredictionResume = predictRole(resumeSkills);
+    const rolePredictionJob = predictRole(jobSkills);
 
     const jobInsights = {
       detectedSkillCount: jobSkills.length,
@@ -280,12 +277,17 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       jobSkills,
       suggestions,
       jobMatch,
-      rolePrediction,
+      rolePrediction: {
+        predictedFromResume: rolePredictionResume,
+        predictedFromJob: rolePredictionJob
+      },
       jobInsights,
       deepLearning: {
         semanticScore,
-        topMatchedLines: deepLearning.topMatchedLines || [],
-        model: deepLearning.model || "sentence-transformers/all-MiniLM-L6-v2"
+        topMatchedLines: semantic.topMatchedLines || [],
+        model: semantic.model || "sentence-transformers/all-MiniLM-L6-v2",
+        available: semantic.available !== false,
+        warning: semantic.warning || ""
       },
       stats: {
         resumeWords: resumeText ? resumeText.split(/\s+/).length : 0,
@@ -303,7 +305,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     if (filePath && fs.existsSync(filePath)) {
       try {
         fs.unlinkSync(filePath);
-      } catch (_) {}
+      } catch {}
     }
   }
 });

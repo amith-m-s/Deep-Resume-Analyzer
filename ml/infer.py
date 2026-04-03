@@ -18,24 +18,12 @@ MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 model = SentenceTransformer(MODEL_NAME, cache_folder=CACHE_DIR)
 
 ROLE_PROFILES = {
-    "Full Stack Developer": (
-        "Builds frontend and backend web applications using React, Node.js, JavaScript, HTML, CSS, APIs, and databases."
-    ),
-    "Backend Developer": (
-        "Builds server-side systems, APIs, authentication, databases, and backend services using Node.js, Express, SQL, MySQL, PostgreSQL, and REST APIs."
-    ),
-    "Frontend Developer": (
-        "Builds responsive user interfaces using React, JavaScript, TypeScript, HTML, CSS, and modern frontend frameworks."
-    ),
-    "Machine Learning Engineer": (
-        "Designs and deploys machine learning solutions using Python, NumPy, Pandas, scikit-learn, deep learning, NLP, and model deployment."
-    ),
-    "Data Scientist": (
-        "Analyzes data, builds predictive models, and performs statistical analysis using Python, Pandas, NumPy, SQL, and machine learning."
-    ),
-    "Software Engineer": (
-        "Builds software systems with strong programming, OOP, DSA, problem solving, Java, C++, Python, Git, and SQL."
-    ),
+    "Full Stack Developer": "Builds frontend and backend web applications using React, Node.js, JavaScript, HTML, CSS, APIs, and databases.",
+    "Backend Developer": "Builds server-side systems, APIs, authentication, databases, and backend services using Node.js, Express, SQL, MySQL, PostgreSQL, and REST APIs.",
+    "Frontend Developer": "Builds responsive user interfaces using React, JavaScript, TypeScript, HTML, CSS, and modern frontend frameworks.",
+    "Machine Learning Engineer": "Designs and deploys machine learning solutions using Python, NumPy, Pandas, scikit-learn, deep learning, NLP, and model deployment.",
+    "Data Scientist": "Analyzes data, builds predictive models, and performs statistical analysis using Python, Pandas, NumPy, SQL, and machine learning.",
+    "Software Engineer": "Builds software systems with strong programming, OOP, DSA, problem solving, Java, C++, Python, Git, and SQL."
 }
 
 def clean_text(text: str) -> str:
@@ -43,7 +31,6 @@ def clean_text(text: str) -> str:
 
 def split_resume_lines(text: str):
     lines = []
-
     for raw in text.split("\n"):
         line = clean_text(raw)
         if len(line) >= 20:
@@ -57,7 +44,7 @@ def split_resume_lines(text: str):
 
 def semantic_role_prediction(text):
     if not text:
-        return {"role": "General Software Role", "confidence": 0.0}
+        return {"role": "General Software Role", "confidence": 0.0, "topRoles": []}
 
     text_emb = model.encode([text], normalize_embeddings=True)
 
