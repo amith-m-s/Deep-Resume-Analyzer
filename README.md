@@ -1,117 +1,172 @@
 # 🧠 Deep Resume Analyzer
 
-A system for **semantic resume-job matching** using embeddings, ATS-style scoring, and skill gap analysis.
+A **semantic resume-job matching system** that combines embeddings, ATS-style scoring, and skill gap analysis.
 
-Built to simulate **real-world hiring pipelines**, not just keyword matching.
+Designed to simulate **real-world hiring pipelines** with structured evaluation and scalable architecture.
 
 ---
 
 ## 🚀 Overview
 
-This project analyzes resumes against job descriptions by going beyond simple keyword checks.
+Traditional ATS systems rely heavily on keyword matching, often missing context.
 
-It uses **semantic similarity, structured scoring, and skill extraction** to evaluate how well a candidate fits a role.
+This system improves evaluation by combining:
+
+* Semantic similarity (context-aware)
+* Keyword matching (precision)
+* Skill-based validation (relevance)
 
 ---
 
 ## ⚙️ Core Features
 
 * Semantic similarity using embeddings
-* ATS-style scoring system
-* Keyword and skill extraction
-* Skill gap detection
-* Structured evaluation pipeline
+* Hybrid ATS scoring system
+* Skill extraction and gap detection
+* Modular evaluation pipeline
+* Structured scoring output
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ System Architecture
 
+```text
+Input Layer:
+  Resume + Job Description
+
+        │
+        ▼
+
+Preprocessing Layer:
+  - Text cleaning
+  - Tokenization
+  - Normalization
+
+        │
+        ▼
+
+Embedding Layer:
+  - Convert text → vector representation
+  - Capture semantic meaning
+
+        │
+        ▼
+
+Scoring Layer:
+  - Semantic similarity (cosine)
+  - Keyword match score
+  - Skill match score
+
+        │
+        ▼
+
+Aggregation Layer:
+  - Weighted scoring system
+  - Final ATS-style score
+
+        │
+        ▼
+
+Analysis Layer:
+  - Skill gap detection
+  - Recommendations
 ```
-            ┌──────────────┐
-            │   Resume     │
-            └──────┬───────┘
-                   │
-                   ▼
-         ┌──────────────────┐
-         │ Text Processing  │
-         └────────┬─────────┘
-                  │
-                  ▼
-        ┌────────────────────┐
-        │ Embedding Engine   │
-        └────────┬───────────┘
-                 │
-                 ▼
-      ┌────────────────────────┐
-      │ Similarity Computation │
-      └────────┬───────────────┘
-               │
-               ▼
-     ┌──────────────────────────┐
-     │ ATS Scoring + Analysis   │
-     └────────┬─────────────────┘
-              │
-              ▼
-      ┌──────────────────────┐
-      │ Final Evaluation     │
-      └──────────────────────┘
+
+---
+
+## 🧠 Scoring Model
+
+The final score is computed using a **hybrid weighted approach**:
+
+```python
+final_score = (
+    0.6 * semantic_similarity +
+    0.25 * keyword_score +
+    0.15 * skill_score
+)
 ```
 
----
+### Why Hybrid Scoring?
 
-## 🧠 How It Works
+* Semantic similarity → captures context
+* Keyword matching → ensures precision
+* Skill matching → validates real relevance
 
-### 1. Text Processing
-
-* Cleans and normalizes resume + job description
-* Removes noise and extracts meaningful tokens
-
-### 2. Embedding Generation
-
-* Converts text into vector representations
-* Captures semantic meaning beyond keywords
-
-### 3. Similarity Matching
-
-* Uses cosine similarity to compare resume vs job
-* Scores based on contextual relevance
-
-### 4. ATS Scoring
-
-* Combines:
-
-  * Keyword match
-  * Semantic similarity
-  * Skill presence
-
-### 5. Skill Gap Detection
-
-* Identifies missing skills required for the job
-* Highlights improvement areas
+This reduces false positives and improves reliability.
 
 ---
 
-## ⚙️ Design Decisions
+## 📊 Evaluation Strategy
 
-* Used **semantic embeddings** instead of keyword-only matching
-* Modular pipeline → easy to extend and scale
-* Separated scoring logic from processing layer
-* Designed system to simulate **real ATS workflows**
+To validate system performance, controlled test cases were used:
+
+### Test Scenarios
+
+| Scenario           | Expected Result |
+| ------------------ | --------------- |
+| Matching resume    | High score      |
+| Partially matching | Medium score    |
+| Unrelated resume   | Low score       |
 
 ---
 
-## 🚧 Challenges
+### Metrics Used
 
-* Avoiding false positives in semantic similarity
-* Balancing keyword vs contextual scoring
-* Handling diverse resume formats
-* Designing a pipeline that remains modular
+* **Score Consistency** → similar resumes produce similar scores
+* **Precision Proxy** → relevant resumes ranked higher
+* **False Positive Reduction** → irrelevant resumes penalized
+
+---
+
+## 🚧 Challenges & Solutions
+
+### 1. False Positives in Semantic Similarity
+
+* Problem: embeddings can overestimate similarity
+* Solution: combined with keyword + skill scoring
+
+---
+
+### 2. Balancing Keyword vs Context
+
+* Problem: keyword-only systems lack depth
+* Solution: normalized scores + weighted hybrid model
+
+---
+
+### 3. Resume Format Variability
+
+* Problem: inconsistent structure and noise
+* Solution: preprocessing pipeline for normalization
+
+---
+
+### 4. Pipeline Scalability
+
+* Problem: monolithic design limits extensibility
+* Solution: modular architecture separating each stage
+
+---
+
+### 5. Scoring Reliability
+
+* Problem: inconsistent evaluation results
+* Solution: tested with controlled scenarios and tuning
+
+---
+
+## 🧠 Engineering Decisions
+
+* Used cosine similarity for semantic comparison
+* Designed modular pipeline for scalability
+* Avoided black-box scoring → interpretable outputs
+* Prioritized extensibility for future ML integration
 
 ---
 
 ## 📊 Example Output
 
-```
+```text
 Match Score: 78%
 
 Matched Skills:
@@ -124,7 +179,7 @@ Missing Skills:
 - System Design
 
 Recommendation:
-Improve backend scalability knowledge and containerization skills
+Improve backend scalability and containerization knowledge
 ```
 
 ---
@@ -148,17 +203,17 @@ python main.py
 
 ---
 
-## 📌 Future Improvements
+## 🔮 Future Improvements
 
-* Add LLM-based evaluation
-* Improve skill extraction accuracy
-* Build web interface for real-time analysis
-* Add recruiter dashboard
+* Integrate transformer-based embeddings (BERT / LLMs)
+* Add real dataset benchmarking
+* Build recruiter dashboard UI
+* Introduce ranking system for multiple candidates
 
 ---
 
-## 🧠 Key Takeaway
+## 🧠 Key Insight
 
-This project focuses on **understanding resumes semantically**, not just matching keywords — making it closer to real-world hiring systems.
+This project demonstrates how combining **semantic understanding with structured scoring** leads to more reliable and realistic hiring evaluations than traditional ATS systems.
 
 ---
