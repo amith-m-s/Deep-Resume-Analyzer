@@ -3,3 +3,5 @@ client/node_modules
 uploads
 ml/model_cache
 .env
+uploads/
+model_cache/
