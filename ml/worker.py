@@ -24,7 +24,7 @@ hf_logging.set_verbosity_error()
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-MODEL_NAME = "sentence-transformers/paraphrase-MiniLM-L3-v2"
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 model = SentenceTransformer(MODEL_NAME, cache_folder=CACHE_DIR)
 
 ROLE_PROFILES = {
