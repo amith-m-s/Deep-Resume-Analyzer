@@ -9,14 +9,38 @@ const { randomUUID } = require("crypto");
 
 const app = express();
 
-app.use(cors({ origin: true }));
-app.options("*", cors({ origin: true }));
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS ||
+    "http://localhost:3000,https://deep-resume-analyzer.vercel.app")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error("Origin not allowed by CORS"));
+  }
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "2mb" }));
 
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-const upload = multer({ dest: uploadDir });
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype !== "application/pdf") {
+      return cb(new Error("Only PDF resumes are accepted"));
+    }
+    cb(null, true);
+  }
+});
 
 const SKILL_RULES = [
   { name: "Machine Learning", patterns: [/\bmachine learning\b/i, /\bml\b/i] },
