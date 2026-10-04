@@ -16,7 +16,6 @@ Express.js gateway
    |
    +--> PDF extraction
    +--> keyword/skill matching
-   +--> rate limiting
    |
    v
 Python inference worker
