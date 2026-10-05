@@ -4,6 +4,7 @@
 [![Last Commit](https://img.shields.io/github/last-commit/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer/commits/main)
 [![Issues](https://img.shields.io/github/issues/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer/issues)
 [![Stars](https://img.shields.io/github/stars/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer/stargazers)
+[![CodeQL](https://github.com/amith-m-s/Deep-Resume-Analyzer/actions/workflows/codeql.yml/badge.svg)](https://github.com/amith-m-s/Deep-Resume-Analyzer/actions/workflows/codeql.yml)
 
 # Deep Resume Analyzer
 
