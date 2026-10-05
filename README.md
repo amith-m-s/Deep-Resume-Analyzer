@@ -1,3 +1,10 @@
+[![Top Language](https://img.shields.io/github/languages/top/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer)
+[![Code Size](https://img.shields.io/github/languages/code-size/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer)
+[![Repo Size](https://img.shields.io/github/repo-size/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer)
+[![Last Commit](https://img.shields.io/github/last-commit/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer/commits/main)
+[![Issues](https://img.shields.io/github/issues/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer/issues)
+[![Stars](https://img.shields.io/github/stars/amith-m-s/Deep-Resume-Analyzer)](https://github.com/amith-m-s/Deep-Resume-Analyzer/stargazers)
+
 # Deep Resume Analyzer
 
 **Semantic resume-to-job-description matching application with a React frontend, Express gateway, and Python NLP inference worker.**
