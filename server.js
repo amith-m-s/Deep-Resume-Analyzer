@@ -6,6 +6,7 @@ const cors = require("cors");
 const pdfParse = require("pdf-parse");
 const { spawn } = require("child_process");
 const { randomUUID } = require("crypto");
+const { hasPdfSignature } = require("./upload-validation");
 
 const app = express();
 
@@ -302,14 +303,25 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
+    // Track the temp file before any early return so every upload is cleaned up.
+    filePath = req.file.path;
+
     const jobDescription = normalizeText(req.body.jobDescription);
     if (!jobDescription) {
       return res.status(400).json({ message: "Job description is required" });
     }
 
-    filePath = req.file.path;
+    const fileBuffer = fs.readFileSync(filePath);
+    if (!hasPdfSignature(fileBuffer)) {
+      return res.status(400).json({ message: "Uploaded file does not appear to be a valid PDF" });
+    }
 
-    const parsed = await pdfParse(fs.readFileSync(filePath));
+    let parsed;
+    try {
+      parsed = await pdfParse(fileBuffer);
+    } catch {
+      return res.status(400).json({ message: "The uploaded file could not be parsed as a PDF" });
+    }
     const resumeText = normalizeText(parsed.text);
 
     const resumeSkills = extractSkills(resumeText);
@@ -380,8 +392,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
   } catch (error) {
     console.error("ERROR:", error);
     res.status(500).json({
-      message: "Error processing file",
-      error: error.message
+      message: "Unable to process the resume. Please try again."
     });
   } finally {
     if (filePath && fs.existsSync(filePath)) {
