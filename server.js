@@ -337,7 +337,7 @@ app.post("/upload", (req, res) => {
       }
 
       let parsed;
-    try {
+      try {
         parsed = await pdfParse(fileBuffer);
       } catch {
         return res.status(400).json({ message: "The uploaded file could not be parsed as a PDF" });
