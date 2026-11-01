@@ -324,96 +324,96 @@ app.post("/upload", (req, res) => {
     }
 
     try {
-    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-    const jobDescription = normalizeText(req.body.jobDescription);
-    if (!jobDescription) {
-      return res.status(400).json({ message: "Job description is required" });
-    }
+      const jobDescription = normalizeText(req.body.jobDescription);
+      if (!jobDescription) {
+        return res.status(400).json({ message: "Job description is required" });
+      }
 
-    const fileBuffer = fs.readFileSync(filePath);
-    if (!hasPdfSignature(fileBuffer)) {
-      return res.status(400).json({ message: "Uploaded file does not appear to be a valid PDF" });
-    }
+      const fileBuffer = fs.readFileSync(filePath);
+      if (!hasPdfSignature(fileBuffer)) {
+        return res.status(400).json({ message: "Uploaded file does not appear to be a valid PDF" });
+      }
 
-    let parsed;
+      let parsed;
     try {
-      parsed = await pdfParse(fileBuffer);
-    } catch {
-      return res.status(400).json({ message: "The uploaded file could not be parsed as a PDF" });
-    }
-    const resumeText = normalizeText(parsed.text);
+        parsed = await pdfParse(fileBuffer);
+      } catch {
+        return res.status(400).json({ message: "The uploaded file could not be parsed as a PDF" });
+      }
+      const resumeText = normalizeText(parsed.text);
 
-    const resumeSkills = extractSkills(resumeText);
-    const jobSkills = extractSkills(jobDescription);
+      const resumeSkills = extractSkills(resumeText);
+      const jobSkills = extractSkills(jobDescription);
 
-    const jobMatch = matchJob(resumeSkills, jobSkills);
-    const semantic = await runDeepLearningAnalysis(resumeText, jobDescription);
+      const jobMatch = matchJob(resumeSkills, jobSkills);
+      const semantic = await runDeepLearningAnalysis(resumeText, jobDescription);
 
-    const semanticScore = semantic.semanticScore || 0;
-    const keywordMatchScore = jobMatch.normalizedScore;
-    const atsScore = calculateATSScore(
-      jobMatch.rawCoverageScore,
-      semanticScore,
-      jobSkills.length,
-      jobDescription.split(/\s+/).filter(Boolean).length
-    );
-
-    const overallScore = Math.round(
-      semanticScore * 0.45 +
-      atsScore * 0.35 +
-      keywordMatchScore * 0.20
-    );
-
-    const suggestions = jobSkills.filter((skill) => !resumeSkills.includes(skill));
-
-    const jobInsights = {
-      detectedSkillCount: jobSkills.length,
-      isGeneric: jobSkills.length < 3,
-      warning:
-        jobSkills.length < 3
-          ? "This job description appears generic or non-technical. Add more technical keywords for better scoring."
-          : ""
-    };
-
-    const resumeRoleFromSkills = predictRoleFromSkills(resumeSkills);
-    const jobRoleFromSkills = predictRoleFromSkills(jobSkills);
-
-    res.json({
-      message: "Resume processed",
-      atsScore,
-      keywordMatchScore,
-      keywordCoverageScore: jobMatch.rawCoverageScore,
-      overallScore,
-      skills: resumeSkills,
-      jobSkills,
-      suggestions,
-      jobMatch,
-      rolePrediction: {
-        predictedFromResume: semantic.rolePrediction?.resume?.role || resumeRoleFromSkills,
-        predictedFromJob: semantic.rolePrediction?.job?.role || jobRoleFromSkills,
-        resumeConfidence: semantic.rolePrediction?.resume?.confidence ?? 0,
-        jobConfidence: semantic.rolePrediction?.job?.confidence ?? 0
-      },
-      jobInsights,
-      deepLearning: {
+      const semanticScore = semantic.semanticScore || 0;
+      const keywordMatchScore = jobMatch.normalizedScore;
+      const atsScore = calculateATSScore(
+        jobMatch.rawCoverageScore,
         semanticScore,
-        topMatchedLines: semantic.topMatchedLines || [],
-        model: semantic.model || "sentence-transformers/paraphrase-MiniLM-L3-v2",
-        available: semantic.available !== false,
-        warning: semantic.warning || ""
-      },
-      stats: {
-        resumeWords: resumeText ? resumeText.split(/\s+/).length : 0,
-        jobDescriptionWords: jobDescription.split(/\s+/).length
-      },
-      text: parsed.text
-    });
-  } catch (error) {
-    console.error("ERROR:", error);
-    res.status(500).json({
-      message: "Unable to process the resume. Please try again."
-    });
+        jobSkills.length,
+        jobDescription.split(/\s+/).filter(Boolean).length
+      );
+
+      const overallScore = Math.round(
+        semanticScore * 0.45 +
+        atsScore * 0.35 +
+        keywordMatchScore * 0.20
+      );
+
+      const suggestions = jobSkills.filter((skill) => !resumeSkills.includes(skill));
+
+      const jobInsights = {
+        detectedSkillCount: jobSkills.length,
+        isGeneric: jobSkills.length < 3,
+        warning:
+          jobSkills.length < 3
+            ? "This job description appears generic or non-technical. Add more technical keywords for better scoring."
+            : ""
+      };
+
+      const resumeRoleFromSkills = predictRoleFromSkills(resumeSkills);
+      const jobRoleFromSkills = predictRoleFromSkills(jobSkills);
+
+      res.json({
+        message: "Resume processed",
+        atsScore,
+        keywordMatchScore,
+        keywordCoverageScore: jobMatch.rawCoverageScore,
+        overallScore,
+        skills: resumeSkills,
+        jobSkills,
+        suggestions,
+        jobMatch,
+        rolePrediction: {
+          predictedFromResume: semantic.rolePrediction?.resume?.role || resumeRoleFromSkills,
+          predictedFromJob: semantic.rolePrediction?.job?.role || jobRoleFromSkills,
+          resumeConfidence: semantic.rolePrediction?.resume?.confidence ?? 0,
+          jobConfidence: semantic.rolePrediction?.job?.confidence ?? 0
+        },
+        jobInsights,
+        deepLearning: {
+          semanticScore,
+          topMatchedLines: semantic.topMatchedLines || [],
+          model: semantic.model || "sentence-transformers/paraphrase-MiniLM-L3-v2",
+          available: semantic.available !== false,
+          warning: semantic.warning || ""
+        },
+        stats: {
+          resumeWords: resumeText ? resumeText.split(/\s+/).length : 0,
+          jobDescriptionWords: jobDescription.split(/\s+/).length
+        },
+        text: parsed.text
+      });
+    } catch (error) {
+      console.error("ERROR:", error);
+      res.status(500).json({
+        message: "Unable to process the resume. Please try again."
+      });
     } finally {
       try {
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
