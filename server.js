@@ -7,6 +7,7 @@ const pdfParse = require("pdf-parse");
 const { spawn } = require("child_process");
 const { randomUUID } = require("crypto");
 const { hasPdfSignature } = require("./upload-validation");
+const { createUploadPath } = require("./upload-path");
 
 const app = express();
 
@@ -32,8 +33,19 @@ app.use(express.json({ limit: "2mb" }));
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
+const uploadPaths = new WeakMap();
+
 const upload = multer({
-  dest: uploadDir,
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+      const uploadPath = uploadPaths.get(req);
+      if (!uploadPath) {
+        return cb(new Error("Upload path was not initialized"));
+      }
+      cb(null, path.basename(uploadPath));
+    }
+  }),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== "application/pdf") {
@@ -42,6 +54,11 @@ const upload = multer({
     cb(null, true);
   }
 });
+
+function initializeUploadPath(req, res, next) {
+  uploadPaths.set(req, createUploadPath(uploadDir));
+  next();
+}
 
 const SKILL_RULES = [
   { name: "Machine Learning", patterns: [/\bmachine learning\b/i, /\bml\b/i] },
@@ -297,14 +314,11 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, pythonWorker: !!pythonWorker });
 });
 
-app.post("/upload", upload.single("resume"), async (req, res) => {
-  let filePath = null;
+app.post("/upload", initializeUploadPath, upload.single("resume"), async (req, res) => {
+  const filePath = uploadPaths.get(req);
 
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
-
-    // Track the temp file before any early return so every upload is cleaned up.
-    filePath = req.file.path;
 
     const jobDescription = normalizeText(req.body.jobDescription);
     if (!jobDescription) {
@@ -395,11 +409,12 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       message: "Unable to process the resume. Please try again."
     });
   } finally {
-    if (filePath && fs.existsSync(filePath)) {
-      try {
+    try {
+      if (filePath && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-      } catch {}
-    }
+      }
+    } catch {}
+    uploadPaths.delete(req);
   }
 });
 
