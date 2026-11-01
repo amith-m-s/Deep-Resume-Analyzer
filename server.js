@@ -33,31 +33,20 @@ app.use(express.json({ limit: "2mb" }));
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-const uploadPaths = new WeakMap();
-
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadDir),
-    filename: (req, file, cb) => {
-      const uploadPath = uploadPaths.get(req);
-      if (!uploadPath) {
-        return cb(new Error("Upload path was not initialized"));
+function createUploadMiddleware(filePath) {
+  return multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => cb(null, uploadDir),
+      filename: (req, file, cb) => cb(null, path.basename(filePath))
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype !== "application/pdf") {
+        return cb(new Error("Only PDF resumes are accepted"));
       }
-      cb(null, path.basename(uploadPath));
+      cb(null, true);
     }
-  }),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype !== "application/pdf") {
-      return cb(new Error("Only PDF resumes are accepted"));
-    }
-    cb(null, true);
-  }
-});
-
-function initializeUploadPath(req, res, next) {
-  uploadPaths.set(req, createUploadPath(uploadDir));
-  next();
+  }).single("resume");
 }
 
 const SKILL_RULES = [
@@ -314,10 +303,27 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, pythonWorker: !!pythonWorker });
 });
 
-app.post("/upload", initializeUploadPath, upload.single("resume"), async (req, res) => {
-  const filePath = uploadPaths.get(req);
+app.post("/upload", (req, res) => {
+  const filePath = createUploadPath(uploadDir);
 
-  try {
+  createUploadMiddleware(filePath)(req, res, async (uploadError) => {
+    if (uploadError) {
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch {}
+
+      if (uploadError.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ message: "Resume must be 5 MB or smaller" });
+      }
+      if (uploadError.message === "Only PDF resumes are accepted") {
+        return res.status(400).json({ message: uploadError.message });
+      }
+
+      console.error("UPLOAD ERROR:", uploadError);
+      return res.status(500).json({ message: "Unable to process the uploaded file. Please try again." });
+    }
+
+    try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
     const jobDescription = normalizeText(req.body.jobDescription);
@@ -408,14 +414,12 @@ app.post("/upload", initializeUploadPath, upload.single("resume"), async (req, r
     res.status(500).json({
       message: "Unable to process the resume. Please try again."
     });
-  } finally {
-    try {
-      if (filePath && fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch {}
-    uploadPaths.delete(req);
-  }
+    } finally {
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch {}
+    }
+  });
 });
 
 const PORT = process.env.PORT || 5000;
