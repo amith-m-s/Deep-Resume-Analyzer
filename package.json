@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test upload-validation.test.js upload-path.test.js"
+    "test": "node --check server.js && node --test upload-validation.test.js upload-path.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
