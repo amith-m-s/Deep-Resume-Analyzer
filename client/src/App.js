@@ -20,6 +20,32 @@ function App() {
     return isLocalhost ? "http://localhost:5000" : deployedBase.replace(/\/+$/, "");
   }, []);
 
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files?.[0] || null;
+    setError("");
+
+    if (!selectedFile) {
+      setFile(null);
+      return;
+    }
+
+    if (selectedFile.type !== "application/pdf") {
+      setFile(null);
+      event.target.value = "";
+      setError("Please select a PDF file.");
+      return;
+    }
+
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      setFile(null);
+      event.target.value = "";
+      setError("Resume must be 5 MB or smaller.");
+      return;
+    }
+
+    setFile(selectedFile);
+  };
+
   const handleAnalyze = async () => {
     setError("");
     setResult(null);
@@ -102,10 +128,11 @@ function App() {
         <div className="form-grid">
           <div className="panel jd-panel">
             <div className="panel-head">
-              <label className="label">Job Description</label>
+              <label className="label" htmlFor="job-description">Job Description</label>
               <span className="panel-badge">Paste real JD text</span>
             </div>
             <textarea
+              id="job-description"
               className="textarea"
               placeholder="Paste the job description here..."
               rows={10}
@@ -116,14 +143,15 @@ function App() {
 
           <div className="panel upload-panel">
             <div className="panel-head">
-              <label className="label">Resume PDF</label>
+              <label className="label" htmlFor="resume-file">Resume PDF</label>
               <span className="panel-badge">PDF only</span>
             </div>
 
             <input
+              id="resume-file"
               type="file"
-              accept=".pdf"
-              onChange={(e) => setFile(e.target.files[0])}
+              accept=".pdf,application/pdf"
+              onChange={handleFileChange}
               className="file-input"
             />
 
@@ -131,7 +159,7 @@ function App() {
               {loading ? "Analyzing..." : "Analyze Resume"}
             </button>
 
-            {error && <p className="error">{error}</p>}
+            {error && <p className="error" role="alert">{error}</p>}
 
             <div className="note">
               <strong>Model:</strong> all-MiniLM-L6-v2 embeddings + cosine similarity
