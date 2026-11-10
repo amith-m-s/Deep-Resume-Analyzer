@@ -5,6 +5,8 @@ import re
 import warnings
 import numpy as np
 
+from worker_protocol import process_message
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "model_cache")
 
@@ -217,30 +219,13 @@ def analyze(resume_text, job_description):
 
 def main():
     for raw in sys.stdin:
-        line = raw.strip()
-        if not line:
+        if not raw.strip():
             continue
 
-        try:
-            payload = json.loads(line)
-            result = analyze(
-                payload.get("resume_text", ""),
-                payload.get("job_description", "")
-            )
-            output = {
-                "id": payload.get("id"),
-                "ok": True,
-                "result": result
-            }
-        except Exception as e:
-            output = {
-                "id": payload.get("id") if "payload" in locals() else None,
-                "ok": False,
-                "error": str(e)
-            }
-
+        output = process_message(raw, analyze)
         sys.stdout.write(json.dumps(output) + "\n")
         sys.stdout.flush()
+
 
 if __name__ == "__main__":
     main()

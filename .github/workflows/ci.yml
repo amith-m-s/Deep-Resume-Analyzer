@@ -16,6 +16,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Run Python worker protocol tests
+        run: python3 -m unittest discover -s ml -p 'test_*.py' -v
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
